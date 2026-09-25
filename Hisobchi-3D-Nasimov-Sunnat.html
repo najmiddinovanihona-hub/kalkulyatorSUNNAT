@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hisobchi 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;600&display=swap">
+<style>
+:root{
+  --page:#e6eaf0; --page2:#cfd6e0; --ink:#1b2029; --muted:#5b6574; --line:#c3cbd6;
+  --panel:#f4f6f9; --panel-ink:#1b2029; --hover:#e8ecf2;
+  /* device (physical object, same in both themes) */
+  --body1:#2b313a; --body2:#1c2027; --bezel:#3a414c; --side:#12151a;
+  --k-num:#3d4450; --k-num-edge:#232830; --k-num-ink:#f1f3f6;
+  --k-fn:#2a3039; --k-fn-edge:#171a20; --k-fn-ink:#a9c0d6;
+  --k-op:#2d5ccc; --k-op-edge:#1b3a86; --k-op-ink:#ffffff;
+  --k-eq:#f08a24; --k-eq-edge:#a85708; --k-eq-ink:#1a1206;
+  --k-clr:#d4633a; --k-clr-edge:#8e3a1c;
+  --lcd:#0a1a20; --lcd2:#0f262e; --lcd-ink:#d3f6ff; --lcd-dim:#6f98a6; --lcd-glow:rgba(120,220,255,.35);
+  --disp:'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --ui:'Chakra Petch', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --page:#10141a; --page2:#070a0e; --ink:#e7ebf1; --muted:#8c97a7; --line:#262d37;
+    --panel:#171c24; --panel-ink:#e7ebf1; --hover:#1f2630;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --page:#10141a; --page2:#070a0e; --ink:#e7ebf1; --muted:#8c97a7; --line:#262d37;
+  --panel:#171c24; --panel-ink:#e7ebf1; --hover:#1f2630;
+}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{
+  background:radial-gradient(1200px 700px at 50% 20%, var(--page) 0%, var(--page2) 100%) fixed, var(--page);
+  color:var(--ink); font-family:var(--ui);
+  padding-inline:16px; padding-block:28px 40px;
+  overflow-x:hidden;
+}
+.wrap{max-width:980px; margin:0 auto; display:flex; flex-direction:column; gap:28px}
+header{display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap}
+h1{font-size:clamp(26px,4vw,36px); font-weight:700; letter-spacing:.01em; margin:0; line-height:1.05; text-wrap:balance}
+h1 span{color:var(--k-op)}
+.sub{color:var(--muted); font-size:14px; margin:6px 0 0}
+.tog{
+  font-family:var(--ui); font-size:13px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
+  background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:999px;
+  padding:8px 14px; cursor:pointer;
+}
+.tog:hover{background:var(--hover)}
+.tog:focus-visible, .key:focus-visible, .hist button:focus-visible, .copy:focus-visible{outline:2px solid var(--k-eq); outline-offset:3px}
+
+.stage{display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:36px; align-items:start}
+@media (max-width:820px){ .stage{grid-template-columns:minmax(0,1fr)} }
+
+/* ---------- 3D scene ---------- */
+.scene{
+  perspective:1600px; perspective-origin:50% 40%;
+  display:flex; flex-direction:column; align-items:center; gap:14px;
+  padding-block:10px 0; touch-action:pan-y; user-select:none; -webkit-user-select:none;
+}
+.controls{display:flex; flex-wrap:wrap; justify-content:center; gap:8px}
+.controls .tog.on{background:var(--k-op); color:#fff; border-color:var(--k-op)}
+.hint{color:var(--muted); font-size:13px; margin:0; text-align:center}
+.device{
+  --rx:14deg; --ry:-14deg; --t:0px;
+  position:relative; width:min(430px,100%);
+  transform-style:preserve-3d;
+  transform:rotateX(var(--rx)) rotateY(var(--ry));
+  border-radius:30px; padding:22px; margin-top:8px;
+  cursor:grab; touch-action:pan-y;
+}
+.device.dragging{cursor:grabbing}
+.device.ease{transition:transform .7s cubic-bezier(.2,.8,.2,1)}
+.device .face, .device .brand, .device .lcd, .device .key{backface-visibility:hidden; -webkit-backface-visibility:hidden}
+.plate, .slab{position:absolute; inset:0; border-radius:30px; pointer-events:none}
+.plate.front{
+  transform:translateZ(0);
+  background:linear-gradient(160deg,var(--bezel) 0%,var(--body1) 18%,var(--body2) 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14), inset 0 -2px 0 rgba(0,0,0,.4);
+}
+#slabs{position:absolute; inset:0; transform-style:preserve-3d; pointer-events:none}
+.slab{background:#161a20; border:1px solid #262c35}
+.plate.back{
+  transform:translateZ(-30px) rotateY(180deg);
+  background:linear-gradient(200deg,#30363f 0%,#1e232a 60%,#181c22 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12);
+  display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:34px 28px;
+}
+.back .logo{font-family:var(--ui); font-weight:700; font-size:34px; letter-spacing:.3em; color:#2a3038; text-shadow:0 1px 0 rgba(255,255,255,.08), 0 -1px 0 rgba(0,0,0,.6)}
+.back .grille{display:grid; grid-template-columns:repeat(6,8px); gap:8px}
+.back .grille i{display:block; width:8px; height:8px; border-radius:50%; background:#0f1216; box-shadow:0 1px 0 rgba(255,255,255,.07)}
+.back .battery{width:62%; aspect-ratio:2.2; border-radius:14px; border:2px solid #121519; box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 1px 0 rgba(255,255,255,.06); display:flex; align-items:center; justify-content:center; position:relative}
+.back .battery::after{content:""; position:absolute; right:14px; top:50%; width:14px; height:14px; margin-top:-7px; border-radius:50%; background:radial-gradient(circle,#4a525e 0 30%,#262b33 32% 100%)}
+.back .label{background:#d9dde3; color:#23282f; border-radius:8px; padding:10px 16px; font-family:var(--disp); font-size:11px; line-height:1.6; text-align:left; width:62%}
+.back .label b{font-family:var(--ui); font-size:13px; letter-spacing:.1em}
+.back .feet{position:absolute; inset:18px; pointer-events:none}
+.back .feet i{position:absolute; width:22px; height:22px; border-radius:50%; background:radial-gradient(circle at 40% 35%,#3b4049,#0d0f12); box-shadow:0 2px 3px rgba(0,0,0,.6)}
+.back .feet i:nth-child(1){left:0;top:0}.back .feet i:nth-child(2){right:0;top:0}.back .feet i:nth-child(3){left:0;bottom:0}.back .feet i:nth-child(4){right:0;bottom:0}
+.ground{
+  width:min(380px,90%); height:40px; margin-top:6px;
+  background:radial-gradient(closest-side, rgba(0,0,0,.35), rgba(0,0,0,0));
+  filter:blur(4px);
+}
+
+.brand{display:flex; justify-content:space-between; align-items:center; margin:0 4px 12px; transform:translateZ(2px)}
+.brand b{font-size:13px; letter-spacing:.22em; color:#c9d3df; font-weight:600}
+.brand i{font-style:normal; font-size:11px; letter-spacing:.14em; color:#7c8796}
+.solar{display:flex; gap:3px}
+.solar s{display:block; width:14px; height:10px; background:linear-gradient(180deg,#3a2c22,#1f1712); border-radius:2px; box-shadow:inset 0 0 0 1px #0b0806}
+
+.lcd{
+  position:relative; transform:translateZ(6px);
+  background:linear-gradient(180deg,var(--lcd2),var(--lcd));
+  border-radius:16px; padding:14px 16px 12px;
+  box-shadow:inset 0 3px 10px rgba(0,0,0,.8), inset 0 0 0 1px rgba(255,255,255,.05), 0 1px 0 rgba(255,255,255,.08);
+  min-height:132px; display:flex; flex-direction:column; justify-content:space-between; gap:6px;
+  margin-bottom:18px;
+}
+.lcd::after{content:""; position:absolute; inset:0; border-radius:16px; pointer-events:none;
+  background:linear-gradient(120deg, rgba(255,255,255,.07) 0%, rgba(255,255,255,0) 40%)}
+.lcd-top{display:flex; justify-content:space-between; align-items:center; font-family:var(--disp); font-size:12px; color:var(--lcd-dim); letter-spacing:.08em}
+.lcd-name{
+  font-family:var(--disp); font-weight:600; font-size:15px; letter-spacing:.28em; text-align:center;
+  color:#ffc978; text-shadow:0 0 10px rgba(255,190,100,.45);
+  padding-bottom:6px; border-bottom:1px dashed #1f3b44;
+}
+@media (max-width:460px){ .lcd-name{font-size:13px; letter-spacing:.2em} }
+.flags{display:flex; gap:10px}
+.flags .on{color:var(--lcd-ink); text-shadow:0 0 8px var(--lcd-glow)}
+.copy{font-family:var(--ui); font-size:12px; background:transparent; color:var(--lcd-dim); border:1px solid #23414b; border-radius:8px; padding:3px 9px; cursor:pointer}
+.copy:hover{color:var(--lcd-ink); border-color:#3a6573}
+.expr{
+  font-family:var(--disp); font-size:18px; color:var(--lcd-dim); text-align:right;
+  white-space:nowrap; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; min-height:26px;
+}
+.expr::-webkit-scrollbar{display:none}
+.expr .ghost{opacity:.35}
+.result{
+  font-family:var(--disp); font-weight:400; font-size:44px; line-height:1.05; color:var(--lcd-ink);
+  text-align:right; white-space:nowrap; overflow-x:auto; scrollbar-width:none;
+  text-shadow:0 0 14px var(--lcd-glow); font-variant-numeric:tabular-nums;
+}
+.result::-webkit-scrollbar{display:none}
+.result.preview{color:var(--lcd-dim); text-shadow:none; font-size:30px}
+.result.err{color:#ffb38a; text-shadow:0 0 12px rgba(255,140,80,.35); font-size:30px}
+.lcd.shake{animation:shake .38s}
+@keyframes shake{20%{transform:translateZ(6px) translateX(-7px)}40%{transform:translateZ(6px) translateX(6px)}60%{transform:translateZ(6px) translateX(-4px)}80%{transform:translateZ(6px) translateX(2px)}}
+
+.keys{display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; transform-style:preserve-3d}
+.key{
+  --c:var(--k-num); --edge:var(--k-num-edge); --ink:var(--k-num-ink);
+  position:relative; height:54px; border:0; border-radius:13px; cursor:pointer;
+  font-family:var(--ui); font-size:22px; font-weight:500; color:var(--ink);
+  background:linear-gradient(180deg, color-mix(in srgb, var(--c) 82%, #fff) 0%, var(--c) 45%, color-mix(in srgb, var(--c) 88%, #000) 100%);
+  box-shadow:0 6px 0 var(--edge), 0 12px 14px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.22);
+  transform:translateZ(16px);
+  transition:transform .08s ease, box-shadow .08s ease, filter .15s;
+  -webkit-tap-highlight-color:transparent; user-select:none; touch-action:manipulation;
+}
+.key:hover{filter:brightness(1.08)}
+.key.pressed, .key:active{
+  transform:translateZ(5px) translateY(5px);
+  box-shadow:0 1px 0 var(--edge), 0 3px 5px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.12);
+}
+.key.fn{--c:var(--k-fn); --edge:var(--k-fn-edge); --ink:var(--k-fn-ink); font-size:16px; font-weight:600; height:44px}
+.key.op{--c:var(--k-op); --edge:var(--k-op-edge); --ink:var(--k-op-ink); font-size:26px}
+.key.eq{--c:var(--k-eq); --edge:var(--k-eq-edge); --ink:var(--k-eq-ink); font-size:28px; font-weight:700; grid-column:span 2}
+.key.clr{--c:var(--k-clr); --edge:var(--k-clr-edge); --ink:#fff; font-size:18px; font-weight:700}
+.key.wide{grid-column:span 2}
+.key.mid{font-size:18px}
+.key sup{font-size:.62em; vertical-align:super; line-height:0}
+.key.mode.rad{--ink:#ffd08a}
+
+/* heights follow the screen so the whole device fits on laptops and phones */
+.key{height:clamp(40px, 5.2vh, 54px)}
+.key.fn{height:clamp(32px, 4.2vh, 44px)}
+@media (max-width:820px){
+  body{padding-block:16px 32px}
+  .wrap{gap:18px}
+  header{align-items:center}
+  .sub{font-size:13px}
+}
+@media (max-width:460px){
+  .device{padding:14px; border-radius:24px; width:100%}
+  .plate,.slab{border-radius:24px}
+  .brand{margin-bottom:10px}
+  .lcd{min-height:112px; padding:12px 12px 10px; margin-bottom:14px}
+  .expr{font-size:16px}
+  .keys{gap:7px}
+  .key{height:clamp(42px, 6.2vh, 52px); font-size:20px; border-radius:11px}
+  .key.fn{height:clamp(34px, 4.8vh, 42px); font-size:14px}
+  .key.op{font-size:24px}
+  .key.mid{font-size:16px}
+  .result{font-size:34px}
+  .result.preview,.result.err{font-size:24px}
+  .back .logo{font-size:24px}
+  .tips{display:none}
+}
+@media (max-width:340px){
+  .keys{gap:5px}
+  .key{font-size:18px}
+  .key.fn{font-size:12px}
+}
+/* phone in landscape: device and history side by side, compact keys */
+@media (max-height:500px) and (orientation:landscape){
+  .stage{grid-template-columns:minmax(0,1fr) 260px}
+  .key{height:36px; font-size:18px}
+  .key.fn{height:30px; font-size:13px}
+  .lcd{min-height:96px}
+  .result{font-size:30px}
+}
+@media (hover:none){ .key:hover{filter:none} }
+
+.owner{
+  margin-top:16px; text-align:center; transform:translateZ(2px);
+  font-family:var(--ui); font-weight:700; font-size:14px; letter-spacing:.32em; color:#b9c4d1;
+  text-shadow:0 -1px 0 rgba(0,0,0,.7), 0 1px 0 rgba(255,255,255,.08);
+}
+.device .owner{backface-visibility:hidden; -webkit-backface-visibility:hidden}
+.back .engrave{font-family:var(--ui); font-weight:600; font-size:18px; letter-spacing:.34em; color:#c9a46a; text-shadow:0 -1px 0 rgba(0,0,0,.7), 0 1px 0 rgba(255,255,255,.1)}
+@media (max-width:460px){ .owner{margin-top:12px; font-size:12px} .back .engrave{font-size:14px} }
+/* ---------- history ---------- */
+.hist{background:var(--panel); color:var(--panel-ink); border:1px solid var(--line); border-radius:18px; padding:18px; display:flex; flex-direction:column; gap:12px}
+.hist-head{display:flex; justify-content:space-between; align-items:center}
+.hist h2{margin:0; font-size:15px; letter-spacing:.14em; text-transform:uppercase}
+.hist-head button{font-family:var(--ui); font-size:13px; background:none; border:0; color:var(--muted); cursor:pointer; padding:4px 6px; border-radius:6px}
+.hist-head button:hover{color:var(--ink); background:var(--hover)}
+.hist ol{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; max-height:430px; overflow-y:auto}
+.hist li button{
+  width:100%; text-align:right; background:none; border:0; border-radius:10px; padding:9px 10px; cursor:pointer; color:inherit;
+  display:flex; flex-direction:column; gap:2px; font-family:var(--disp);
+}
+.hist li button:hover{background:var(--hover)}
+.hist .he{font-size:13px; color:var(--muted); overflow-wrap:anywhere}
+.hist .hr{font-size:19px; font-weight:600; overflow-wrap:anywhere}
+.empty{color:var(--muted); font-size:14px; margin:0; line-height:1.5}
+.tips{color:var(--muted); font-size:13px; line-height:1.6; border-top:1px solid var(--line); padding-top:12px; margin:0}
+.tips kbd{font-family:var(--disp); font-size:12px; border:1px solid var(--line); border-bottom-width:2px; border-radius:5px; padding:0 5px; color:var(--ink)}
+
+@media (prefers-reduced-motion: reduce){
+  .device.ease,.key{transition:none}
+  .lcd.shake{animation:none}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Hisobchi <span>3D</span></h1>
+      <p class="sub">Ilmiy kalkulyator · sichqoncha, barmoq yoki klaviatura bilan ishlaydi</p>
+    </div>
+  </header>
+
+  <div class="stage">
+    <div class="scene" id="scene">
+      <div class="device" id="device">
+        <div class="plate back face" aria-hidden="true">
+          <div class="feet"><i></i><i></i><i></i><i></i></div>
+          <div class="grille"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="logo">HISOBCHI</div>
+          <div class="engrave">NASIMOV SUNNAT</div>
+          <div class="battery"></div>
+          <div class="label"><b>FX‑3D</b><br>Ilmiy kalkulyator<br>Quyosh + LR44 · 1.5 V<br>Egasi: NASIMOV SUNNAT</div>
+        </div>
+        <div id="slabs" aria-hidden="true"></div>
+        <div class="plate front face" aria-hidden="true"></div>
+        <div class="brand">
+          <div><b>HISOBCHI</b> <i>FX‑3D</i></div>
+          <div class="solar" aria-hidden="true"><s></s><s></s><s></s><s></s></div>
+        </div>
+
+        <div class="lcd" id="lcd" aria-live="polite">
+          <div class="lcd-name">NASIMOV SUNNAT</div>
+          <div class="lcd-top">
+            <div class="flags"><span id="fDeg" class="on">DEG</span><span id="fRad">RAD</span><span id="fAns">ANS</span></div>
+            <button class="copy" id="copyBtn" type="button">Nusxa</button>
+          </div>
+          <div class="expr" id="expr"></div>
+          <div class="result" id="result">0</div>
+        </div>
+
+        <div class="keys" id="keys">
+          <button class="key fn mode" data-act="mode" id="modeKey">DEG</button>
+          <button class="key fn" data-in="sin(">sin</button>
+          <button class="key fn" data-in="cos(">cos</button>
+          <button class="key fn" data-in="tan(">tan</button>
+          <button class="key fn" data-in="π">π</button>
+
+          <button class="key fn" data-in="ln(">ln</button>
+          <button class="key fn" data-in="log(">log</button>
+          <button class="key fn" data-in="√(">√x</button>
+          <button class="key fn" data-in="²">x<sup>2</sup></button>
+          <button class="key fn" data-in="^">x<sup>y</sup></button>
+
+          <button class="key fn" data-in="(">(</button>
+          <button class="key fn" data-in=")">)</button>
+          <button class="key fn" data-in="!">n!</button>
+          <button class="key fn" data-in="⁻¹">x<sup>−1</sup></button>
+          <button class="key fn" data-in="e">e</button>
+
+          <button class="key clr" data-act="clear">AC</button>
+          <button class="key clr" data-act="back" aria-label="O'chirish">⌫</button>
+          <button class="key mid" data-act="neg" aria-label="Ishorani almashtirish">±</button>
+          <button class="key mid" data-in="%">%</button>
+          <button class="key op" data-in="÷" aria-label="Bo'lish">÷</button>
+
+          <button class="key" data-in="7">7</button>
+          <button class="key" data-in="8">8</button>
+          <button class="key" data-in="9">9</button>
+          <button class="key mid" data-in="Ans">Ans</button>
+          <button class="key op" data-in="×" aria-label="Ko'paytirish">×</button>
+
+          <button class="key" data-in="4">4</button>
+          <button class="key" data-in="5">5</button>
+          <button class="key" data-in="6">6</button>
+          <button class="key mid" data-in="³">x<sup>3</sup></button>
+          <button class="key op" data-in="−" aria-label="Ayirish">−</button>
+
+          <button class="key" data-in="1">1</button>
+          <button class="key" data-in="2">2</button>
+          <button class="key" data-in="3">3</button>
+          <button class="key mid" data-in="∛(">∛x</button>
+          <button class="key op" data-in="+" aria-label="Qo'shish">+</button>
+
+          <button class="key wide" data-in="0">0</button>
+          <button class="key" data-in="." aria-label="Nuqta">.</button>
+          <button class="key eq" data-act="eq" aria-label="Teng">=</button>
+        </div>
+        <div class="owner">NASIMOV SUNNAT</div>
+      </div>
+      <div class="ground" id="ground" aria-hidden="true"></div>
+      <div class="controls">
+        <button class="tog" id="spinBtn" type="button" aria-pressed="false">↻ 360° aylantirish</button>
+        <button class="tog" id="backBtn" type="button">Orqasini ko'rish</button>
+        <button class="tog" id="frontBtn" type="button">Oldiga qaytarish</button>
+      </div>
+      <p class="hint" id="hint">Aylantirish uchun kalkulyator korpusini yoki ekranini barmoq/sichqoncha bilan suring</p>
+    </div>
+
+    <aside class="hist" aria-label="Hisoblar tarixi">
+      <div class="hist-head">
+        <h2>Tarix</h2>
+        <button type="button" id="histClear">Tozalash</button>
+      </div>
+      <ol id="histList"></ol>
+      <p class="empty" id="histEmpty">Hisoblaringiz shu yerda saqlanadi. Birortasini bossangiz, natija qayta ifodaga qo'shiladi.</p>
+      <p class="tips">
+        <kbd>0–9</kbd> <kbd>+ − * /</kbd> <kbd>^</kbd> <kbd>( )</kbd> <kbd>%</kbd> <kbd>!</kbd><br>
+        <kbd>Enter</kbd> hisoblash · <kbd>⌫</kbd> o'chirish · <kbd>Esc</kbd> tozalash<br>
+        <kbd>s</kbd> sin · <kbd>c</kbd> cos · <kbd>t</kbd> tan · <kbd>l</kbd> ln · <kbd>p</kbd> π · <kbd>r</kbd> √
+      </p>
+    </aside>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = s => document.querySelector(s);
+  const exprEl = $('#expr'), resEl = $('#result'), lcd = $('#lcd');
+  let expr = '(12+8)×3²';
+  let ans = 0, deg = true, done = false, lastVal = null;
+  let history = [];
+  try { history = JSON.parse(localStorage.getItem('hisobchi-hist') || '[]') || []; } catch(e){ history = []; }
+  try { const d = localStorage.getItem('hisobchi-deg'); if (d === '0') deg = false; } catch(e){}
+
+  /* ---------- math engine (no eval) ---------- */
+  const FN = ['sin','cos','tan','ln','log','√','∛'];
+  function tokenize(s){
+    const t = []; let i = 0;
+    while (i < s.length){
+      const c = s[i];
+      if (c === ' ') { i++; continue; }
+      if (/[0-9.]/.test(c)){
+        let j = i; while (j < s.length && /[0-9.]/.test(s[j])) j++;
+        const str = s.slice(i, j);
+        if (str === '.' || (str.match(/\./g)||[]).length > 1) throw new Error('num');
+        t.push({k:'num', v:parseFloat(str)}); i = j; continue;
+      }
+      if (s.startsWith('Ans', i)) { t.push({k:'num', v:ans}); i += 3; continue; }
+      if (s.startsWith('⁻¹', i)) { t.push({k:'inv'}); i += 2; continue; }
+      const f = FN.find(n => s.startsWith(n, i));
+      if (f) { t.push({k:'fn', v:f}); i += f.length; continue; }
+      if (c === 'π') { t.push({k:'num', v:Math.PI}); i++; continue; }
+      if (c === 'e') { t.push({k:'num', v:Math.E}); i++; continue; }
+      if ('+−×÷^()!²³%'.includes(c)) { t.push({k:c}); i++; continue; }
+      throw new Error('tok');
+    }
+    return t;
+  }
+  function gamma(z){
+    if (z < 0.5) return Math.PI / (Math.sin(Math.PI*z) * gamma(1-z));
+    z -= 1;
+    const c = [0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+    let x = c[0]; for (let i = 1; i < 9; i++) x += c[i] / (z + i);
+    const t = z + 7.5;
+    return Math.sqrt(2*Math.PI) * Math.pow(t, z+0.5) * Math.exp(-t) * x;
+  }
+  function fact(n){
+    if (Number.isInteger(n)){
+      if (n < 0) return NaN;
+      if (n > 170) return Infinity;
+      let r = 1; for (let i = 2; i <= n; i++) r *= i; return r;
+    }
+    return gamma(n + 1);
+  }
+  function applyFn(f, x){
+    const toR = v => deg ? v * Math.PI / 180 : v;
+    const clean = v => Math.abs(v) < 1e-12 ? 0 : v;
+    switch (f){
+      case 'sin': return clean(Math.sin(toR(x)));
+      case 'cos': return clean(Math.cos(toR(x)));
+      case 'tan':
+        if (deg && ((x % 180) + 180) % 180 === 90) return NaN;
+        return clean(Math.tan(toR(x)));
+      case 'ln': return Math.log(x);
+      case 'log': return Math.log10(x);
+      case '√': return Math.sqrt(x);
+      case '∛': return Math.cbrt(x);
+    }
+    return NaN;
+  }
+  function evaluate(s){
+    const tk = tokenize(s); let p = 0;
+    if (!tk.length) throw new Error('empty');
+    const peek = () => tk[p], next = () => tk[p++];
+    const starts = t => t && (t.k === 'num' || t.k === 'fn' || t.k === '(');
+    function expr(){
+      let v = term();
+      while (peek() && (peek().k === '+' || peek().k === '−')){
+        const o = next().k, r = term(); v = o === '+' ? v + r : v - r;
+      }
+      return v;
+    }
+    function term(){
+      let v = unary();
+      for(;;){
+        const t = peek();
+        if (t && (t.k === '×' || t.k === '÷')){ next(); const r = unary(); v = t.k === '×' ? v * r : v / r; }
+        else if (starts(t)) v *= power();
+        else break;
+      }
+      return v;
+    }
+    function unary(){
+      const t = peek();
+      if (t && t.k === '−'){ next(); return -unary(); }
+      if (t && t.k === '+'){ next(); return unary(); }
+      return power();
+    }
+    function power(){
+      const b = postfix();
+      if (peek() && peek().k === '^'){ next(); return Math.pow(b, unary()); }
+      return b;
+    }
+    function postfix(){
+      let v = primary();
+      for(;;){
+        const t = peek(); if (!t) break;
+        if (t.k === '!'){ next(); v = fact(v); }
+        else if (t.k === '²'){ next(); v = v*v; }
+        else if (t.k === '³'){ next(); v = v*v*v; }
+        else if (t.k === '%'){ next(); v = v/100; }
+        else if (t.k === 'inv'){ next(); v = 1/v; }
+        else break;
+      }
+      return v;
+    }
+    function primary(){
+      const t = next(); if (!t) throw new Error('eof');
+      if (t.k === 'num') return t.v;
+      if (t.k === '('){
+        const v = expr();
+        if (peek() && peek().k === ')') next(); else if (peek()) throw new Error('paren');
+        return v;
+      }
+      if (t.k === 'fn'){
+        const a = (peek() && peek().k === '(') ? primary() : postfix();
+        return applyFn(t.v, a);
+      }
+      throw new Error('syntax');
+    }
+    const v = expr();
+    if (p < tk.length) throw new Error('trail');
+    if (!isFinite(v)) throw new Error('math');
+    return v;
+  }
+
+  /* ---------- formatting ---------- */
+  const SUP = {'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','-':'⁻','+':''};
+  function fmt(v){
+    if (Object.is(v, -0)) v = 0;
+    const a = Math.abs(v);
+    if (a !== 0 && (a >= 1e12 || a < 1e-7)){
+      let [m, e] = v.toExponential(8).split('e');
+      m = m.replace(/\.?0+$/, '').replace('-', '−');
+      return m + '×10' + e.split('').map(ch => SUP[ch]).join('');
+    }
+    let s = String(parseFloat(v.toPrecision(12)));
+    let neg = s.startsWith('-'); if (neg) s = s.slice(1);
+    let [i, d] = s.split('.');
+    i = i.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    return (neg ? '−' : '') + i + (d ? '.' + d : '');
+  }
+  const raw = v => String(parseFloat(v.toPrecision(12)));
+
+  /* ---------- display ---------- */
+  function unclosed(s){ let n = 0; for (const c of s){ if (c === '(') n++; else if (c === ')') n = Math.max(0, n-1); } return n; }
+  function esc(s){ return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+  function setFlags(){
+    $('#fDeg').classList.toggle('on', deg);
+    $('#fRad').classList.toggle('on', !deg);
+    $('#fAns').classList.toggle('on', ans !== 0);
+    const mk = $('#modeKey'); mk.textContent = deg ? 'DEG' : 'RAD'; mk.classList.toggle('rad', !deg);
+  }
+  function render(){
+    setFlags();
+    resEl.className = 'result';
+    if (done){
+      exprEl.innerHTML = esc(expr) + ' =';
+      resEl.textContent = fmt(lastVal);
+    } else {
+      const g = unclosed(expr);
+      exprEl.innerHTML = esc(expr) + (g ? '<span class="ghost">' + ')'.repeat(g) + '</span>' : '');
+      if (!expr){ resEl.textContent = '0'; }
+      else {
+        let pv = null; try { pv = evaluate(expr); } catch(e){}
+        if (pv !== null && /[+−×÷^!²³%⁻√∛a-zπe(]/.test(expr)){ resEl.textContent = '= ' + fmt(pv); resEl.classList.add('preview'); }
+        else if (pv !== null){ resEl.textContent = fmt(pv); }
+        else { resEl.textContent = '…'; resEl.classList.add('preview'); }
+      }
+    }
+    exprEl.scrollLeft = exprEl.scrollWidth;
+    resEl.scrollLeft = resEl.scrollWidth;
+  }
+  function renderHist(){
+    const ol = $('#histList'); ol.innerHTML = '';
+    $('#histEmpty').hidden = history.length > 0;
+    $('#histClear').hidden = history.length === 0;
+    history.slice().reverse().forEach(h => {
+      const li = document.createElement('li'), b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = '<span class="he">' + esc(h.e) + ' =</span><span class="hr">' + esc(fmt(h.v)) + '</span>';
+      b.addEventListener('click', () => insert(raw(h.v).replace('-', '−'), true));
+      li.appendChild(b); ol.appendChild(li);
+    });
+  }
+  function save(){ try { localStorage.setItem('hisobchi-hist', JSON.stringify(history.slice(-40))); } catch(e){} }
+
+  /* ---------- actions ---------- */
+  const POSTOP = /^[+−×÷^²³!%]|^⁻¹/;
+  function insert(s, asValue){
+    if (done){
+      expr = (POSTOP.test(s) && !asValue) ? 'Ans' + s : s;
+      done = false;
+    } else {
+      if (expr.length > 160) return;
+      expr += s;
+    }
+    render();
+  }
+  function back(){
+    if (done){ done = false; render(); return; }
+    const ends = ['sin(','cos(','tan(','log(','ln(','√(','∛(','Ans','⁻¹'];
+    const m = ends.find(x => expr.endsWith(x));
+    expr = expr.slice(0, expr.length - (m ? m.length : 1));
+    render();
+  }
+  function clearAll(){ expr = ''; done = false; render(); }
+  function neg(){
+    if (done){ expr = 'Ans'; done = false; }
+    const un = expr.match(/\(−(Ans|π|e|\d+\.?\d*|\.\d+)\)$/);
+    if (un){ expr = expr.slice(0, un.index) + un[1]; }
+    else {
+      const m = expr.match(/(Ans|π|e|\d+\.?\d*|\.\d+)$/);
+      if (m) expr = expr.slice(0, m.index) + '(−' + m[1] + ')';
+      else expr += '−';
+    }
+    render();
+  }
+  function equals(){
+    if (done || !expr) return;
+    try {
+      const v = evaluate(expr);
+      const full = expr + ')'.repeat(unclosed(expr));
+      expr = full; ans = v; lastVal = v; done = true;
+      history.push({e: full, v}); if (history.length > 40) history.shift();
+      save(); renderHist(); render();
+    } catch(e){
+      resEl.className = 'result err';
+      resEl.textContent = /math/.test(e.message) ? 'Hisoblab bo\'lmaydi' : 'Ifoda xato';
+      lcd.classList.remove('shake'); void lcd.offsetWidth; lcd.classList.add('shake');
+    }
+  }
+  function toggleMode(){ deg = !deg; try{ localStorage.setItem('hisobchi-deg', deg ? '1' : '0'); }catch(e){} render(); }
+
+  function run(btn){
+    const a = btn.dataset.act, i = btn.dataset.in;
+    if (i !== undefined) return insert(i);
+    ({clear:clearAll, back, neg, eq:equals, mode:toggleMode})[a]();
+  }
+  $('#keys').addEventListener('click', e => { const b = e.target.closest('.key'); if (b) run(b); });
+
+  /* keyboard */
+  const KEYMAP = {'*':'×','x':'×','/':'÷','-':'−','+':'+','^':'^','(':'(',')':')','.':'.',',':'.','%':'%','!':'!','s':'sin(','c':'cos(','t':'tan(','l':'ln(','g':'log(','p':'π','e':'e','r':'√('};
+  function flash(sel){
+    const b = document.querySelector(sel); if (!b) return;
+    b.classList.add('pressed'); setTimeout(() => b.classList.remove('pressed'), 110);
+  }
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = e.key;
+    if (/^[0-9]$/.test(k)){ insert(k); flash('.key[data-in="'+k+'"]'); }
+    else if (KEYMAP[k]){ insert(KEYMAP[k]); flash('.key[data-in="'+KEYMAP[k]+'"]'); }
+    else if (k === 'Enter' || k === '='){ e.preventDefault(); equals(); flash('.key[data-act="eq"]'); }
+    else if (k === 'Backspace'){ back(); flash('.key[data-act="back"]'); }
+    else if (k === 'Escape' || k === 'Delete'){ clearAll(); flash('.key[data-act="clear"]'); }
+    else return;
+    ensureFront();
+    e.preventDefault();
+  });
+
+  /* copy */
+  $('#copyBtn').addEventListener('click', () => {
+    let v = null;
+    try { v = done ? lastVal : evaluate(expr); } catch(e){}
+    if (v === null) return;
+    const txt = raw(v), btn = $('#copyBtn');
+    const ok = () => { btn.textContent = 'Nusxalandi'; setTimeout(() => btn.textContent = 'Nusxa', 1200); };
+    try { navigator.clipboard.writeText(txt).then(ok, () => { resEl.textContent = txt; ok(); }); }
+    catch(e){ resEl.textContent = txt; }
+  });
+
+  $('#histClear').addEventListener('click', () => { history = []; save(); renderHist(); });
+
+  /* ---------- 3D: drag to rotate 360°, auto-spin, back side ---------- */
+  const dev = $('#device'), ground = $('#ground'), scene = $('#scene');
+  const slabs = $('#slabs');
+  for (let i = 1; i <= 14; i++){
+    const d = document.createElement('div'); d.className = 'slab';
+    d.style.transform = 'translateZ(' + (-2 * i) + 'px)'; slabs.appendChild(d);
+  }
+  const spinBtn = $('#spinBtn');
+  let rx, ry, vx = 0, spinning = false, dragging = false, inertia = 0, spinRaf = 0, easeT = 0;
+  const base = () => innerWidth < 700 ? {x:8, y:-10} : {x:14, y:-16};
+  function apply(){
+    dev.style.setProperty('--rx', rx.toFixed(2) + 'deg');
+    dev.style.setProperty('--ry', ry.toFixed(2) + 'deg');
+    const c = Math.abs(Math.cos(ry * Math.PI / 180));
+    ground.style.transform = 'scaleX(' + (0.5 + 0.5 * c).toFixed(3) + ')';
+  }
+  function animateTo(x, y){
+    const d = (((y - ry) % 360) + 540) % 360 - 180;
+    dev.classList.add('ease'); rx = x; ry = ry + d; apply();
+    clearTimeout(easeT); easeT = setTimeout(() => dev.classList.remove('ease'), 720);
+  }
+  function facingAway(){ const n = ((ry % 360) + 360) % 360; return n > 90 && n < 270; }
+  function stopSpin(){
+    spinning = false; cancelAnimationFrame(spinRaf);
+    spinBtn.classList.remove('on'); spinBtn.setAttribute('aria-pressed', 'false');
+    spinBtn.textContent = '↻ 360° aylantirish';
+  }
+  function startSpin(){
+    spinning = true; dev.classList.remove('ease');
+    spinBtn.classList.add('on'); spinBtn.setAttribute('aria-pressed', 'true');
+    spinBtn.textContent = '■ To\'xtatish';
+    let last = performance.now();
+    const step = now => {
+      if (!spinning) return;
+      const dt = Math.min(50, now - last); last = now;
+      ry += dt * 0.072;            // one full turn in 5 s
+      rx += (12 - rx) * 0.05;
+      apply(); spinRaf = requestAnimationFrame(step);
+    };
+    spinRaf = requestAnimationFrame(step);
+  }
+  function ensureFront(){ if (spinning) stopSpin(); if (facingAway()){ const b = base(); animateTo(b.x, b.y); } }
+  function front(){ stopSpin(); cancelAnimationFrame(inertia); const b = base(); animateTo(b.x, b.y); }
+
+  { const b = base(); rx = b.x; ry = b.y; apply(); }
+
+  let lx = 0, ly = 0, lt = 0, pid = null;
+  scene.addEventListener('pointerdown', e => {
+    if (e.target.closest('button') || e.button > 0) return;
+    if (!e.target.closest('#device') && e.target.closest('.controls, .hint')) return;
+    stopSpin(); cancelAnimationFrame(inertia); dev.classList.remove('ease');
+    dragging = true; pid = e.pointerId; lx = e.clientX; ly = e.clientY; lt = performance.now(); vx = 0;
+    dev.classList.add('dragging');
+    try { scene.setPointerCapture(pid); } catch(_){}
+  });
+  scene.addEventListener('pointermove', e => {
+    if (!dragging || e.pointerId !== pid) return;
+    const dx = e.clientX - lx, dy = e.clientY - ly, now = performance.now();
+    lx = e.clientX; ly = e.clientY;
+    const k = innerWidth < 700 ? 0.7 : 0.5;
+    ry += dx * k;
+    if (e.pointerType === 'mouse') rx = Math.max(-60, Math.min(60, rx - dy * 0.35));
+    vx = dx * k * (16 / Math.max(8, now - lt)); lt = now;
+    apply();
+  });
+  function endDrag(e){
+    if (!dragging || (e && e.pointerId !== pid)) return;
+    dragging = false; dev.classList.remove('dragging');
+    if (performance.now() - lt > 80) vx = 0;
+    const glide = () => {
+      if (Math.abs(vx) < 0.05) return;
+      ry += vx; vx *= 0.95; apply(); inertia = requestAnimationFrame(glide);
+    };
+    inertia = requestAnimationFrame(glide);
+  }
+  scene.addEventListener('pointerup', endDrag);
+  scene.addEventListener('pointercancel', endDrag);
+  dev.addEventListener('dblclick', e => { if (!e.target.closest('button')) front(); });
+
+  spinBtn.addEventListener('click', () => spinning ? stopSpin() : startSpin());
+  $('#backBtn').addEventListener('click', () => { stopSpin(); cancelAnimationFrame(inertia); animateTo(10, 180); });
+  $('#frontBtn').addEventListener('click', front);
+  window.addEventListener('resize', () => { if (!spinning && !dragging && !facingAway()){ const b = base(); rx = b.x; apply(); } });
+
+  render(); renderHist();
+})();
+</script>
+
+</body>
+</html>
